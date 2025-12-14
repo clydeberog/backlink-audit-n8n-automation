@@ -1,0 +1,793 @@
+{
+  "name": "Backlink Automation | Audit & Disavow | *",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Backlink Audit",
+        "formDescription": "After uploading the file, the backlink audit report will be sent via email and uploaded to Google Drive.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Upload CSV of URLS and Domains",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Company Name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Auditor Name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        -1312,
+        -352
+      ],
+      "id": "cb99268c-5f72-4e09-a3c7-20dcc593cf67",
+      "name": "On form submission",
+      "webhookId": "f52e8556-6e02-481f-8dfd-bb2fcb4487ca"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "You will receive, in this single session, a list of rows. Each row is an object with these fields: domain (string), toxic_score (number 0–100 or missing), domain_authority (number or null), anchor (string), anchor_type (string). For each row, apply the decision rules below in order (deterministically) and return a single JSON array named results as specified.\nDecision rules (apply in order)\n- Rule A (Disavow): toxic_score >= 40.\n- Rule B (Disavow): toxic_score >= 30 AND domain_authority <= 20.\n- Rule C (Disavow): toxic_score >= 30 AND anchor_type indicates spam (case‑insensitive token match for any of: spam, paid, exact-match, sitewide, commercial).\n- Rule D (Keep): toxic_score < 30 AND domain_authority >= 30 AND anchor_type indicates natural/brand (case‑insensitive token match for any of: brand, navigational, natural).\n- Rule E (Monitor): none of the above rules apply.\n- Manual review override: If a row matches any Disavow rule (A–C) but toxic_score >= 40 and domain_authority >= 80 and the anchor appears editorial (long descriptive anchor text), then choose Monitor and set decision_rule to \"manual_review_override\".\nNormalization and edge handling\n- Treat toxic_score as numeric; if missing or non‑numeric, treat as 0.\n- If domain_authority is missing, treat it as null (neutral).\n- Normalize anchor_type by lowercasing and trimming before token matching.\n- If multiple rules could apply, use the first matching rule in the order above.\n- Consider an anchor \"long descriptive\" for manual override when its length and wording indicate editorial context (e.g., >6 words and not a short commercial phrase).\nRequired output format (single JSON array only)\nReturn only a JSON array named results. Each element must be an object with exactly these keys and nothing else:\n- domain_url: string (the Source URL / domain)\n- decision_rule: string — one of: \"Rule A\", \"Rule B\", \"Rule C\", \"Rule D\", \"Rule E\", or \"manual_review_override\" (use the label exactly)\n- reason: one short factual sentence explaining why that rule applied\nReason style and constraints\n- Keep reason concise and factual (one sentence).\n- Use the templates below for phrasing but adapt values to the row:\n- Rule A: \"Toxic Score 72 — automatic disavow per threshold.\"\n- Rule B: \"Toxic Score 35 and DA 18 — mid toxicity with low authority; disavow.\"\n- Rule C: \"Toxic Score 33 and anchor_type 'paid' — spam indicator; disavow.\"\n- Rule D: \"Toxic Score 12 and DA 55 with brand anchor — safe to keep.\"\n- Rule E: \"Toxic Score 25 and DA 22 — none of the disavow/keep rules matched; monitor.\"\n- Manual override: \"Toxic Score 75 and DA 82 with editorial anchor — manual review recommended instead of automatic disavow.\"\nExecution note\nProcess the provided rows now and return only the results JSON array in this single session.\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -640,
+        -352
+      ],
+      "id": "ae51b77f-566e-41cf-b46b-c87ba8de069f",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "content": "## Upload\n- Upload backlinks URL from SEMrush\n- Add Company Name, Auditor and Email\n- A confirmation wil be sent via Email",
+        "height": 816,
+        "width": 672,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1392,
+        -544
+      ],
+      "typeVersion": 1,
+      "id": "9329f74a-57f5-4793-9a9b-9528e524f182",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Analysis\n- Filtered Data is inserted and analyzed individually by AI LLM\n- Metrics and a set of criteria are set to help in decision making.",
+        "height": 560,
+        "width": 352,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -704,
+        -544
+      ],
+      "typeVersion": 1,
+      "id": "5e7ebb48-0e2b-42a9-b2e3-510fbe24c00f",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Filter & Upload\n- Output from AI LLM is collected and converted to CSV and TXT.\n- CSV is uploaded as Unfiltered Backlink Audt Report to Google Drive\n- TXT is created to be uploaded to Google Disavow Tool\n- A Finish confirmation is sent via Email",
+        "height": 576,
+        "width": 512
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -336,
+        -544
+      ],
+      "typeVersion": 1,
+      "id": "e7a91091-d523-4e9d-b9bd-ce2bfe47dc92",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Function node - extract unique domains for Google Disavow Tool\n// Returns a single item with { disavowText }\n\nconst isObject = v => v && typeof v === 'object' && !Array.isArray(v);\n\nfunction normalizeDomain(d) {\n  if (!d) return '';\n  let s = String(d).trim().toLowerCase();\n  s = s.replace(/^(https?:\\/\\/)/, '');\n  s = s.split('/')[0].split(':')[0];\n  s = s.replace(/^www\\./, '');\n  return s;\n}\n\nconst collectedRows = [];\nfor (const it of items) {\n  const j = it.json;\n  if (!j) continue;\n\n  if (j.type === 'table_array' && Array.isArray(j.rows)) {\n    collectedRows.push(...j.rows);\n    continue;\n  }\n  if (Array.isArray(j.rows) && Array.isArray(j.columns)) {\n    collectedRows.push(...j.rows);\n    continue;\n  }\n  if (Array.isArray(j) && j.length && typeof j[0] === 'object') {\n    collectedRows.push(...j);\n    continue;\n  }\n  if (isObject(j)) {\n    for (const k of Object.keys(j)) {\n      const v = j[k];\n      if (Array.isArray(v) && v.length && typeof v[0] === 'object') {\n        collectedRows.push(...v);\n      }\n    }\n  }\n}\n\nconst domainKeys = ['Domain', 'domain', 'domain_url', 'domainUrl', 'url'];\nconst seen = new Set();\nconst disavowList = [];\n\nfor (const r of collectedRows) {\n  if (!isObject(r)) continue;\n\n  let raw = null;\n  for (const k of domainKeys) {\n    if (k in r && r[k]) { raw = r[k]; break; }\n  }\n  if (!raw) {\n    for (const k of Object.keys(r)) {\n      const v = r[k];\n      if (typeof v === 'string' && /^[\\w.-]+\\.[a-z]{2,}$/i.test(v.trim())) {\n        raw = v; break;\n      }\n    }\n  }\n  if (!raw) continue;\n\n  const norm = normalizeDomain(raw);\n  if (!norm || seen.has(norm)) continue;\n\n  seen.add(norm);\n  disavowList.push(`domain:${norm}`);\n}\n\n// Flatten into a single string with line breaks\nconst now = new Date();\nconst header = `# Disavow list generated on ${now.toISOString().split('T')[0]}`;\nconst disavowText = [header, ...disavowList].join('\\n');\n\n// Return only the flattened text\nreturn [\n  {\n    json: {\n      disavowText: disavowText\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        -160
+      ],
+      "id": "f279fafc-5fc4-4eb9-8ee1-b3a5010856fa",
+      "name": "Filter Array"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "disavowText",
+        "binaryPropertyName": "file",
+        "options": {
+          "fileName": "disavow_file.txt"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -32,
+        32
+      ],
+      "id": "1f75f75c-bbb8-4680-8a35-acbb224187c6",
+      "name": "Convert to TXT"
+    },
+    {
+      "parameters": {
+        "batchSize": 12,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -880,
+        -368
+      ],
+      "id": "f362a9ac-0cad-4c5c-85f9-f7b178c48a7b",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "binaryPropertyName": "report",
+        "options": {
+          "fileName": "backlink_audit_report.csv"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -256,
+        32
+      ],
+      "id": "e0d0da0b-e406-434a-90c4-0a85919dfc57",
+      "name": "Convert to CSV"
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "report",
+        "name": "backlink_audit_report.csv",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1iz98NVktc6tUEAkIipeRLAEdr8ub_R5X",
+          "mode": "list",
+          "cachedResultName": "Reports",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1iz98NVktc6tUEAkIipeRLAEdr8ub_R5X"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -256,
+        224
+      ],
+      "id": "c9cf92b7-0805-4b52-8c1c-b9756890c9be",
+      "name": "Upload to Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FbWMndooNkkGBBgQ",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Backlink Audit",
+        "message": "=Hi {{ $json.auditorName }},<br><br>\n\nI have received your backlink audit request for <strong>{{ $json.companyName }}</strong>.<br><br>\n\nA total of <strong>{{ $json.total_domains }}</strong> domains has been successfully added to the processing queue.<br><br>\n\nOnce the audit is complete, you will receive a confirmation email containing download links for both the backlink audit report and the disavow file.<br><br>\n\nPlease note that processing time may vary depending on the volume of domains and URLs submitted.<br><br>\n\nBest regards,<br>\nFrancis Clyde",
+        "options": {
+          "appendAttribution": true,
+          "senderName": "N8N Admin"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -880,
+        112
+      ],
+      "id": "af0c9d61-b34a-403b-90d0-1f3790878820",
+      "name": "Send confirmation",
+      "webhookId": "e6ee7723-fb8f-4751-90c0-ad6c648e3a96",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "8TJhxbkiBYprhZAI",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let summary = null;\n\n// Loop through all items to find the one with total_domains\nfor (const item of items) {\n  if ('total_domains' in item.json) {\n    summary = item.json;\n    break;\n  }\n}\n\nif (!summary) throw new Error('No summary item with total_domains found.');\n\nreturn [\n  {\n    json: {\n      companyName: summary.company_name || '',\n      auditorName: summary.auditor_name || '',\n      submittedAt: summary.submitted_at || '',\n      email: summary.email || '',\n      total_domains: summary.total_domains || 0\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        112
+      ],
+      "id": "ce5d058e-0223-46fe-ae0c-096d911ba5ab",
+      "name": "Company, Auditor & Timestamp"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1136,
+        -128
+      ],
+      "id": "1c6a810f-71d3-4f20-9b5f-a453dd8cc471",
+      "name": "Delay 1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -880,
+        -144
+      ],
+      "id": "9605410d-e7f5-40d4-a001-63bb7aa4cbe6",
+      "name": "Delay 2"
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "file",
+        "name": "disavow_file.txt",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1iz98NVktc6tUEAkIipeRLAEdr8ub_R5X",
+          "mode": "list",
+          "cachedResultName": "Reports",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1iz98NVktc6tUEAkIipeRLAEdr8ub_R5X"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -32,
+        224
+      ],
+      "id": "5951cdc8-f5a0-403e-8a03-c3b0d6b2b9af",
+      "name": "Upload to Drive1",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "FbWMndooNkkGBBgQ",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemma-3-27b-it",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -608,
+        -128
+      ],
+      "id": "b1f8585d-64c7-4a10-9d87-8cf150d5080e",
+      "name": "Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "kIxp0WGDjR99K4vG",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Audit Report for {{ $json.companyName }}",
+        "message": "=Hi {{ $json.auditorName }},<br><br>\n\nThe backlink audit for <strong>{{ $json.companyName }}</strong> has been successfully completed.<br><br>\n\nPlease find the files below:<br>\n1. {{ $json.file1.name }}: <a href=\"{{ $json.file1.webContentLink }}\">Download</a><br>\n2. {{ $json.file2.name }}: <a href=\"{{ $json.file2.webContentLink }}\">Download</a><br><br>\n\nBest regards,<br>\nFrancis Clyde",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -576,
+        400
+      ],
+      "id": "01dfcc18-4599-47df-8393-040e354f8bee",
+      "name": "Send Email and File",
+      "webhookId": "e6ee7723-fb8f-4751-90c0-ad6c648e3a96",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "8TJhxbkiBYprhZAI",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Take the first incoming item\nconst input = items[0].json;\n\n// Return only the desired fields\nreturn [\n  {\n    json: {\n      name: input.name,\n      webContentLink: input.webContentLink\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        432
+      ],
+      "id": "590ba0d7-6435-4de9-84d7-06c550ce6f39",
+      "name": "Report Link"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Take the first incoming item\nconst input = items[0].json;\n\n// Return only the desired fields\nreturn [\n  {\n    json: {\n      name1: input.name,\n      webContentLink1: input.webContentLink\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        432
+      ],
+      "id": "4ae3fb0b-dc8b-42be-9c99-7083d59ead73",
+      "name": "Disavow Link"
+    },
+    {
+      "parameters": {
+        "jsCode": "const audit = items[0].json;\nconst files = items[1].json;\n\nconst merged = {\n  companyName: audit.companyName || '',\n  auditorName: audit.auditorName || '',\n  submittedAt: audit.submittedAt || '',\n  email: audit.email || '',\n  file1: {\n    name: files.file1?.name || '',\n    webContentLink: files.file1?.webContentLink || ''\n  },\n  file2: {\n    name: files.file2?.name || '',\n    webContentLink: files.file2?.webContentLink || ''\n  }\n};\n\nreturn [\n  {\n    json: merged\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        400
+      ],
+      "id": "1ddce793-1a8b-4352-b9ac-d83f42e4699d",
+      "name": "Append"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -992,
+        384
+      ],
+      "id": "3576b66d-a445-4ad6-936e-74a46a914624",
+      "name": "Merge with Headers"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: raw JSON from previous node\nconst input = items[0].json;\n\n// Defensive fallback for array-wrapped structure\nconst data = Array.isArray(input) ? input[0] : input;\n\n// Output: clean JSON structure with toxicity flag, score, severity, and action\nconst formatted = data.rows.map(row => {\n  const reason = (row[\"Reason\"] || \"\").toLowerCase();\n\n  // Flag toxicity based on keywords\n  const toxic = /toxic|spam|disavow/.test(reason);\n\n  // Extract numeric Toxic Score if present\n  let score = null;\n  const match = reason.match(/toxic score\\s*(\\d+)/i);\n  if (match) {\n    score = parseInt(match[1], 10);\n  }\n\n  // Severity classification based on score thresholds\n  let severity = \"Safe\";\n  if (score !== null) {\n    if (score >= 60) severity = \"High\";\n    else if (score >= 30) severity = \"Medium\";\n    else if (score >= 15) severity = \"Low\";\n    else severity = \"Safe\";\n  }\n\n  // Action decision based on severity + toxicity\n  let action = \"Keep\";\n  if (severity === \"High\" || severity === \"Medium\") {\n    action = \"Disavow\";\n  } else if (severity === \"Low\" && toxic) {\n    action = \"Review\"; // borderline cases flagged for manual check\n  }\n\n  return {\n    Domain: row[\"Domain\"],\n    DecisionRule: row[\"Decision rule\"],\n    Reason: row[\"Reason\"],\n    Score: score,\n    Toxic: toxic,\n    Severity: severity,\n    Action: action\n  };\n});\n\n// Return as JSON array\nreturn formatted.map(item => ({ json: item }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -160
+      ],
+      "id": "dafbf1e6-142f-4f7c-8f1a-3181dedacbc6",
+      "name": "Categorize"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 352,
+        "width": 688
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1392,
+        288
+      ],
+      "typeVersion": 1,
+      "id": "cefc8453-7d16-4161-953d-db586c2f9f8d",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 608,
+        "width": 880
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -704,
+        32
+      ],
+      "typeVersion": 1,
+      "id": "87854763-6c4d-44ef-a7c5-66086c50b7fc",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -32,
+        -352
+      ],
+      "id": "85d741ad-97c6-4499-9d12-dd6e0c6d3f42",
+      "name": "Wait",
+      "webhookId": "15961bd0-1ba5-4a16-9b67-5bee50459932"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1328,
+        400
+      ],
+      "id": "ce9df436-2999-4873-959b-d9a80a4f73c6",
+      "name": "Append Links"
+    },
+    {
+      "parameters": {
+        "jsCode": "const obj1 = items[0].json;\nconst obj2 = items[1].json;\n\nconst merged = {\n  file1: {\n    name: obj1.name1 || obj1.name || '',\n    webContentLink: obj1.webContentLink1 || obj1.webContentLink || ''\n  },\n  file2: {\n    name: obj2.name1 || obj2.name || '',\n    webContentLink: obj2.webContentLink1 || obj2.webContentLink || ''\n  }\n};\n\nreturn [\n  {\n    json: merged\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1184,
+        400
+      ],
+      "id": "458b0558-b4ae-4ff3-a825-597d62ced1a4",
+      "name": "Merge Links"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Function node - robustly find and parse the full AI output (JSON array or arrays embedded in strings/code fences),\n// combine all found domain decision objects, and return:\n// 1) table_array: { columns: [...], rows: [...] }\n// 2) table_markdown: { markdown: \"...\" }\n// Also returns a debug item showing where arrays were found.\n\nfunction tryParseJson(s) {\n  try {\n    return JSON.parse(s);\n  } catch (e) {\n    return null;\n  }\n}\n\n// Extract JSON-looking arrays from a string (handles code fences and plain JSON arrays)\nfunction extractArraysFromString(str) {\n  if (!str || typeof str !== 'string') return [];\n  const found = [];\n\n  // 1) Try to parse the whole string\n  const whole = tryParseJson(str);\n  if (Array.isArray(whole)) found.push(whole);\n\n  // 2) Extract code fences that might contain JSON\n  const fenceRegex = /```(?:json)?\\s*([\\s\\S]*?)\\s*```/gi;\n  let m;\n  while ((m = fenceRegex.exec(str)) !== null) {\n    const inside = m[1].trim();\n    const parsed = tryParseJson(inside);\n    if (Array.isArray(parsed)) found.push(parsed);\n    else {\n      // try to find first array substring inside\n      const arrs = extractArraySubstrings(inside);\n      for (const a of arrs) {\n        const p = tryParseJson(a);\n        if (Array.isArray(p)) found.push(p);\n      }\n    }\n  }\n\n  // 3) Find any top-level array substrings like [ ... ] using bracket matching\n  const arrs = extractArraySubstrings(str);\n  for (const a of arrs) {\n    const p = tryParseJson(a);\n    if (Array.isArray(p)) found.push(p);\n  }\n\n  return found;\n}\n\n// Helper: find balanced bracket substrings that start with '[' and end with matching ']'\nfunction extractArraySubstrings(s) {\n  const results = [];\n  for (let i = 0; i < s.length; i++) {\n    if (s[i] === '[') {\n      let depth = 0;\n      for (let j = i; j < s.length; j++) {\n        if (s[j] === '[') depth++;\n        else if (s[j] === ']') depth--;\n        if (depth === 0) {\n          const substr = s.slice(i, j + 1);\n          results.push(substr);\n          i = j;\n          break;\n        }\n      }\n    }\n  }\n  return results;\n}\n\n// Clean cell text\nfunction cleanCell(v) {\n  if (v === undefined || v === null) return '';\n  return String(v).replace(/\\r?\\n/g, ' ').replace(/\\s+/g, ' ').trim();\n}\nfunction escapePipe(s) {\n  return s.replace(/\\|/g, '\\\\|');\n}\n\n// Locate arrays across all items (json objects, strings, nested fields)\nconst foundArrays = [];\nconst debugLocations = [];\n\nfor (let idx = 0; idx < items.length; idx++) {\n  const it = items[idx];\n  const j = it.json;\n\n  // 1) If item.json is already an array\n  if (Array.isArray(j)) {\n    foundArrays.push(j);\n    debugLocations.push({ itemIndex: idx, path: 'items[' + idx + '].json (array)', count: j.length });\n    continue;\n  }\n\n  // 2) If item.json is an object, scan its fields for arrays or JSON strings\n  if (j && typeof j === 'object') {\n    // direct array fields\n    for (const k of Object.keys(j)) {\n      const val = j[k];\n      if (Array.isArray(val)) {\n        foundArrays.push(val);\n        debugLocations.push({ itemIndex: idx, path: `items[${idx}].json.${k} (array)`, count: val.length });\n      } else if (typeof val === 'string') {\n        // try to extract arrays from string\n        const arrays = extractArraysFromString(val);\n        for (const a of arrays) {\n          foundArrays.push(a);\n          debugLocations.push({ itemIndex: idx, path: `items[${idx}].json.${k} (embedded array)`, count: a.length });\n        }\n      }\n    }\n    // also try to stringify and search the whole object for embedded arrays (covers nested strings)\n    const asString = JSON.stringify(j);\n    const arrays = extractArraysFromString(asString);\n    for (const a of arrays) {\n      // avoid duplicates: check if already recorded by reference/length\n      const already = foundArrays.some(existing => Array.isArray(existing) && existing.length === a.length && JSON.stringify(existing) === JSON.stringify(a));\n      if (!already) {\n        const parsed = tryParseJson(a);\n        if (Array.isArray(parsed)) {\n          foundArrays.push(parsed);\n          debugLocations.push({ itemIndex: idx, path: `items[${idx}].json (nested embedded array)`, count: parsed.length });\n        }\n      }\n    }\n  }\n\n  // 3) If item.json is a string, try to parse/extract arrays\n  if (typeof j === 'string') {\n    const arrays = extractArraysFromString(j);\n    for (const a of arrays) {\n      const parsed = tryParseJson(a);\n      if (Array.isArray(parsed)) {\n        foundArrays.push(parsed);\n        debugLocations.push({ itemIndex: idx, path: `items[${idx}].json (string containing array)`, count: parsed.length });\n      }\n    }\n  }\n}\n\n// If nothing found, try to parse entire raw input concatenation\nif (foundArrays.length === 0) {\n  const concat = items.map(it => (it && it.json ? (typeof it.json === 'string' ? it.json : JSON.stringify(it.json)) : '')).join('\\n');\n  const arrays = extractArraysFromString(concat);\n  for (const a of arrays) {\n    const parsed = tryParseJson(a);\n    if (Array.isArray(parsed)) {\n      foundArrays.push(parsed);\n      debugLocations.push({ itemIndex: 'concat', path: 'concatenated items', count: parsed.length });\n    }\n  }\n}\n\n// Combine all found arrays into a single list of objects\nconst combined = [];\nfor (const arr of foundArrays) {\n  if (!Array.isArray(arr)) continue;\n  for (const el of arr) {\n    if (el && typeof el === 'object') combined.push(el);\n  }\n}\n\n// If still empty, return debug so user can inspect raw content\nif (combined.length === 0) {\n  return [\n    { json: { type: 'error', message: 'No domain decision objects found in any item. See debug.', debugLocations } }\n  ];\n}\n\n// Build rows from combined objects (accept domain_url or domain, decision_rule or rule, reason or notes)\nconst rows = [];\nfor (const obj of combined) {\n  const domain = obj.domain_url ?? obj.domain ?? null;\n  const rule = obj.decision_rule ?? obj.rule ?? null;\n  const reason = obj.reason ?? obj.notes ?? null;\n  if (!domain) continue;\n  rows.push({\n    Domain: cleanCell(domain),\n    'Decision rule': cleanCell(rule),\n    Reason: cleanCell(reason)\n  });\n}\n\n// Build markdown table\nconst header = ['Domain', 'Decision rule', 'Reason'];\nlet md = `| ${header.join(' | ')} |\\n| ${header.map(() => '---').join(' | ')} |\\n`;\nfor (const r of rows) {\n  md += `| ${escapePipe(r.Domain)} | ${escapePipe(r['Decision rule'])} | ${escapePipe(r.Reason)} |\\n`;\n}\n\n// Return debug + table_array + table_markdown\nreturn [\n  { json: { type: 'table_array', columns: header, rows: rows, count: rows.length } },\n  { json: { type: 'table_markdown', markdown: md, count: rows.length } }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -352
+      ],
+      "id": "8b65d462-54bf-4f4d-861f-3cdc72c4ebc1",
+      "name": "AI Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const TOX_FIELD = 'Toxic Score';\nconst DOMAIN_FIELD = 'Source URL';\nconst DA_FIELD = 'Domain Authority Score';\nconst ANCHOR_FIELD = 'Anchor';\nconst ANCHOR_TYPE_FIELD = 'Anchor Type';\n\nfunction findCsvTextInJson(item) {\n  for (const k of Object.keys(item)) {\n    const v = item[k];\n    if (typeof v === 'string' && v.includes(',') && v.includes('\\n')) return v;\n  }\n  for (const k of Object.keys(item)) {\n    const v = item[k];\n    if (v && typeof v === 'object') {\n      for (const k2 of Object.keys(v)) {\n        const v2 = v[k2];\n        if (typeof v2 === 'string' && v2.includes(',') && v2.includes('\\n')) return v2;\n      }\n    }\n  }\n  return null;\n}\n\nfunction getCsvTextFromBinary(item) {\n  if (!item.binary) return null;\n  const keys = Object.keys(item.binary);\n  for (const k of keys) {\n    try {\n      const base64 = item.binary[k].data;\n      if (!base64) continue;\n      const txt = Buffer.from(base64, 'base64').toString('utf8');\n      if (txt.includes(',') && txt.includes('\\n')) return txt;\n    } catch (e) { continue; }\n  }\n  return null;\n}\n\nfunction parseCSV(text) {\n  const rows = [];\n  let cur = '';\n  let row = [];\n  let inQuotes = false;\n  for (let i = 0; i < text.length; i++) {\n    const ch = text[i];\n    const next = text[i+1];\n    if (ch === '\"') {\n      if (inQuotes && next === '\"') { cur += '\"'; i++; continue; }\n      inQuotes = !inQuotes;\n      continue;\n    }\n    if (!inQuotes && (ch === '\\n' || ch === '\\r')) {\n      if (ch === '\\r' && text[i+1] === '\\n') { i++; }\n      row.push(cur);\n      rows.push(row);\n      row = [];\n      cur = '';\n      continue;\n    }\n    if (!inQuotes && ch === ',') {\n      row.push(cur);\n      cur = '';\n      continue;\n    }\n    cur += ch;\n  }\n  row.push(cur);\n  if (row.length > 1 || row[0] !== '') rows.push(row);\n  return rows;\n}\n\nfunction toNumber(v) {\n  if (v === null || v === undefined) return NaN;\n  return Number(String(v).trim().replace(',', '.'));\n}\n\nfunction safeString(v) {\n  if (v === null || v === undefined) return '';\n  return String(v).trim();\n}\n\n// main\nlet csvText = findCsvTextInJson(items[0].json);\nif (!csvText) csvText = getCsvTextFromBinary(items[0]);\nif (!csvText) throw new Error('No CSV detected on the incoming item. Inspect the form node output.');\n\nconst parsed = parseCSV(csvText);\nif (parsed.length < 2) return [];\n\nconst headersRaw = parsed[0].map(h => h.trim());\nconst headersNormalized = headersRaw.map(h => h.toLowerCase().replace(/[_\\s]+/g, ' '));\n\nfunction norm(s) { return s.toLowerCase().replace(/[_\\s]+/g, ' '); }\n\nlet toxIndex = headersNormalized.indexOf(norm(TOX_FIELD));\nlet domainIndex = headersNormalized.indexOf(norm(DOMAIN_FIELD));\nlet daIndex = headersNormalized.indexOf(norm(DA_FIELD));\nlet anchorIndex = headersNormalized.indexOf(norm(ANCHOR_FIELD));\nlet anchorTypeIndex = headersNormalized.indexOf(norm(ANCHOR_TYPE_FIELD));\n\nif (toxIndex === -1) toxIndex = headersRaw.indexOf(TOX_FIELD);\nif (domainIndex === -1) domainIndex = headersRaw.indexOf(DOMAIN_FIELD);\nif (daIndex === -1) daIndex = headersRaw.indexOf(DA_FIELD);\nif (anchorIndex === -1) anchorIndex = headersRaw.indexOf(ANCHOR_FIELD);\nif (anchorTypeIndex === -1) anchorTypeIndex = headersRaw.indexOf(ANCHOR_TYPE_FIELD);\n\n// metadata\nconst companyName = items[0].json[\"Company Name\"] || '';\nconst auditorName = items[0].json[\"Auditor Name\"] || '';\nconst submittedAt = items[0].json[\"submittedAt\"] || '';\nconst email = items[0].json[\"Email\"] || '';\n\nconst out = [];\n\nfor (let i = 1; i < parsed.length; i++) {\n  const row = parsed[i];\n\n  let tox = toxIndex >= 0 ? toNumber(row[toxIndex]) : NaN;\n  if (isNaN(tox)) tox = 0;\n\n  if (tox >= 0 && tox <= 100) {\n    let d = domainIndex >= 0 ? safeString(row[domainIndex]) : '';\n    d = d.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '');\n    const daRaw = daIndex >= 0 ? row[daIndex] : null;\n    const da = daRaw !== null && daRaw !== undefined ? toNumber(daRaw) : null;\n\n    const anchor = anchorIndex >= 0 ? safeString(row[anchorIndex]) : '';\n    const anchor_type = anchorTypeIndex >= 0 ? safeString(row[anchorTypeIndex]) : '';\n\n    // push each row as its own item\n    out.push({\n      json: {\n        domain: d,\n        toxic_score: tox,\n        domain_authority: isNaN(da) ? null : da,\n        anchor: anchor,\n        anchor_type: anchor_type,\n        company_name: companyName,\n        auditor_name: auditorName,\n        submitted_at: submittedAt,\n        email: email,\n      }\n    });\n  }\n}\n\n// ➡️ Add a summary item with total domains (exclude the summary itself)\nconst totalDomains = out.length;\n\nout.push({\n  json: {\n    company_name: companyName,\n    auditor_name: auditorName,\n    submitted_at: submittedAt,\n    email: email,\n    total_domains: totalDomains\n  }\n});\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1136,
+        -352
+      ],
+      "id": "fba0e4a2-33b8-4c77-8e0a-239d16eded09",
+      "name": "File Data Parser"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "File Data Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "AI Output Parser",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Array": {
+      "main": [
+        [
+          {
+            "node": "Convert to TXT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to TXT": {
+      "main": [
+        [
+          {
+            "node": "Upload to Drive1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to CSV": {
+      "main": [
+        [
+          {
+            "node": "Upload to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Drive": {
+      "main": [
+        [
+          {
+            "node": "Report Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Company, Auditor & Timestamp": {
+      "main": [
+        [
+          {
+            "node": "Send confirmation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge with Headers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send confirmation": {
+      "main": [
+        []
+      ]
+    },
+    "Delay 1": {
+      "main": [
+        [
+          {
+            "node": "Company, Auditor & Timestamp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Delay 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Delay 2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Drive1": {
+      "main": [
+        [
+          {
+            "node": "Disavow Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email and File": {
+      "main": [
+        []
+      ]
+    },
+    "Report Link": {
+      "main": [
+        [
+          {
+            "node": "Append Links",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Disavow Link": {
+      "main": [
+        [
+          {
+            "node": "Append Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append": {
+      "main": [
+        [
+          {
+            "node": "Send Email and File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge with Headers": {
+      "main": [
+        [
+          {
+            "node": "Append",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Categorize": {
+      "main": [
+        [
+          {
+            "node": "Convert to CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Categorize",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter Array",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Links": {
+      "main": [
+        [
+          {
+            "node": "Merge Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Links": {
+      "main": [
+        [
+          {
+            "node": "Merge with Headers",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Output Parser": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File Data Parser": {
+      "main": [
+        [
+          {
+            "node": "Delay 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1cc303a9-3570-473a-a14a-808571180250",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "361d28ba2004ef018e46011cbf903b50bab75f09a15a68e6fa65582ee7888038"
+  },
+  "id": "IVknZnS6NXb4sryO",
+  "tags": [
+    {
+      "updatedAt": "2025-12-09T04:37:51.439Z",
+      "createdAt": "2025-12-09T04:37:51.439Z",
+      "id": "AvLiLShvtLyi34OP",
+      "name": "Off-Page"
+    },
+    {
+      "updatedAt": "2025-12-08T17:25:00.453Z",
+      "createdAt": "2025-12-08T17:25:00.453Z",
+      "id": "FoeueDzZaXevGRiE",
+      "name": "SEO"
+    }
+  ]
+}
